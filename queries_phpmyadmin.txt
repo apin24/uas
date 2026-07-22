@@ -1,8 +1,5 @@
 ======================================================================
 QUERIES.SQL - PHPMYADMIN FRIENDLY VERSION (DB: uas)
-Cara pakai: Copy-paste setiap block ke tab SQL phpMyAdmin
-Run satu-satu, screenshot tiap hasil
-Untuk block [CREATE]: paste SEMUA, lalu klik Go
 Procedure GenerateUserReport: hasil single result set (pakai temp table)
 ======================================================================
 
