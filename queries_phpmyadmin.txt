@@ -1,0 +1,585 @@
+======================================================================
+QUERIES.SQL - PHPMYADMIN FRIENDLY VERSION (DB: uas)
+Cara pakai: Copy-paste setiap block ke tab SQL phpMyAdmin
+Run satu-satu, screenshot tiap hasil
+Untuk block [CREATE]: paste SEMUA, lalu klik Go
+Procedure GenerateUserReport: hasil single result set (pakai temp table)
+======================================================================
+
+----------------------------------------------------------------------
+>> 2a - Function 1: GetTotalIncome() [CREATE]
+----------------------------------------------------------------------
+DELIMITER //
+CREATE FUNCTION GetTotalIncome()
+RETURNS DECIMAL(12,2)
+DETERMINISTIC
+BEGIN
+    DECLARE total DECIMAL(12,2);
+    SELECT COALESCE(SUM(t.amount), 0) INTO total
+    FROM transactions t
+    JOIN users u ON t.user_id = u.id
+    WHERE t.is_income = 1 AND t.status = 'Success';
+    RETURN total;
+END //
+DELIMITER ;
+
+
+----------------------------------------------------------------------
+>> 2a - Function 1: Eksekusi JOIN + GetTotalIncome()
+----------------------------------------------------------------------
+SELECT
+    u.name AS user_name,
+    u.role,
+    COUNT(t.id) AS total_transactions,
+    SUM(t.amount) AS total_amount
+FROM transactions t
+JOIN users u ON t.user_id = u.id
+WHERE t.is_income = 1
+GROUP BY u.id, u.name, u.role
+ORDER BY total_amount DESC;
+
+SELECT GetTotalIncome() AS total_income_all;
+
+
+----------------------------------------------------------------------
+>> 2a - Function 2: GetExpenseByUserAndMonth() [CREATE]
+----------------------------------------------------------------------
+DELIMITER //
+CREATE FUNCTION GetExpenseByUserAndMonth(p_user_id INT, p_month VARCHAR(7))
+RETURNS DECIMAL(12,2)
+DETERMINISTIC
+BEGIN
+    DECLARE total DECIMAL(12,2);
+    SELECT COALESCE(SUM(amount), 0) INTO total
+    FROM transactions
+    WHERE user_id = p_user_id
+    AND is_income = 0
+    AND status = 'Success'
+    AND DATE_FORMAT(transaction_date, '%Y-%m') = p_month;
+    RETURN total;
+END //
+DELIMITER ;
+
+
+----------------------------------------------------------------------
+>> 2a - Function 2: Eksekusi dengan subquery
+----------------------------------------------------------------------
+SELECT
+    u.name AS user_name,
+    GetExpenseByUserAndMonth(u.id, '2026-07') AS expense_juli
+FROM users u
+WHERE u.id IN (SELECT DISTINCT user_id FROM transactions WHERE is_income = 0)
+ORDER BY expense_juli DESC;
+
+
+----------------------------------------------------------------------
+>> 2a - Daftar Function
+----------------------------------------------------------------------
+SELECT
+    ROUTINE_NAME AS function_name,
+    ROUTINE_TYPE AS type,
+    DATA_TYPE AS return_type
+FROM information_schema.ROUTINES
+WHERE ROUTINE_SCHEMA = 'uas' AND ROUTINE_TYPE = 'FUNCTION';
+
+
+----------------------------------------------------------------------
+>> 2b - Procedure 1: GetFinancialSummary() [CREATE]
+----------------------------------------------------------------------
+DELIMITER //
+CREATE PROCEDURE GetFinancialSummary(OUT p_total_income DECIMAL(12,2), OUT p_total_expense DECIMAL(12,2), OUT p_profit DECIMAL(12,2))
+BEGIN
+    SELECT COALESCE(SUM(amount), 0) INTO p_total_income
+    FROM transactions WHERE is_income = 1 AND status = 'Success';
+
+    SELECT COALESCE(SUM(amount), 0) INTO p_total_expense
+    FROM transactions WHERE is_income = 0 AND status = 'Success';
+
+    SET p_profit = p_total_income - p_total_expense;
+END //
+DELIMITER ;
+
+
+----------------------------------------------------------------------
+>> 2b - Procedure 1: Eksekusi (CALL)
+----------------------------------------------------------------------
+CALL GetFinancialSummary(@income, @expense, @profit);
+SELECT @income AS total_income, @expense AS total_expense, @profit AS profit;
+
+
+----------------------------------------------------------------------
+>> 2b - Procedure 2: GenerateUserReport() [CREATE]
+----------------------------------------------------------------------
+DELIMITER //
+CREATE FUNCTION GetTotalIncome()
+RETURNS DECIMAL(12,2)
+DETERMINISTIC
+BEGIN
+    DECLARE total DECIMAL(12,2);
+    SELECT COALESCE(SUM(t.amount), 0) INTO total
+    FROM transactions t
+    JOIN users u ON t.user_id = u.id
+    WHERE t.is_income = 1 AND t.status = 'Success';
+    RETURN total;
+END //
+DELIMITER ;
+
+-- FUNCTION 2: Dengan 2 parameter
+-- Menghitung total pengeluaran berdasarkan user_id dan bulan
+-- Menggunakan subquery untuk filter
+DELIMITER //
+CREATE FUNCTION GetExpenseByUserAndMonth(p_user_id INT, p_month VARCHAR(7))
+RETURNS DECIMAL(12,2)
+DETERMINISTIC
+BEGIN
+    DECLARE total DECIMAL(12,2);
+    SELECT COALESCE(SUM(amount), 0) INTO total
+    FROM transactions
+    WHERE user_id = p_user_id
+    AND is_income = 0
+    AND status = 'Success'
+    AND DATE_FORMAT(transaction_date, '%Y-%m') = p_month;
+    RETURN total;
+END //
+DELIMITER ;
+
+-- Eksekusi Function 1 (tanpa parameter) dengan JOIN 2 tabel
+SELECT
+    u.name AS user_name,
+    u.role,
+    COUNT(t.id) AS total_transactions,
+    SUM(t.amount) AS total_amount
+FROM transactions t
+JOIN users u ON t.user_id = u.id
+WHERE t.is_income = 1
+GROUP BY u.id, u.name, u.role
+ORDER BY total_amount DESC;
+
+-- Tampilkan total income menggunakan function
+SELECT GetTotalIncome() AS total_income_all;
+
+-- Eksekusi Function 2 (dengan 2 parameter) dengan subquery
+SELECT
+    u.name AS user_name,
+    GetExpenseByUserAndMonth(u.id, '2026-07') AS expense_juli
+FROM users u
+WHERE u.id IN (SELECT DISTINCT user_id FROM transactions WHERE is_income = 0)
+ORDER BY expense_juli DESC;
+
+-- Tampilkan daftar function
+SELECT
+    ROUTINE_NAME AS function_name,
+    ROUTINE_TYPE AS type,
+    DATA_TYPE AS return_type,
+    ROUTINE_DEFINITION AS definition
+FROM information_schema.ROUTINES
+WHERE ROUTINE_SCHEMA = 'uas' AND ROUTINE_TYPE = 'FUNCTION';
+
+-- ============================================================
+-- SOAL 2b: PROCEDURE (2 buah)
+-- ============================================================
+
+-- PROCEDURE 1: Tanpa parameter, dengan OUT
+-- Mengambil ringkasan keuangan: total income, total expense, profit
+DELIMITER //
+CREATE PROCEDURE GetFinancialSummary(OUT p_total_income DECIMAL(12,2), OUT p_total_expense DECIMAL(12,2), OUT p_profit DECIMAL(12,2))
+BEGIN
+    -- Hitung total pemasukan
+    SELECT COALESCE(SUM(amount), 0) INTO p_total_income
+    FROM transactions
+    WHERE is_income = 1 AND status = 'Success';
+
+    -- Hitung total pengeluaran
+    SELECT COALESCE(SUM(amount), 0) INTO p_total_expense
+    FROM transactions
+    WHERE is_income = 0 AND status = 'Success';
+
+    -- Hitung profit
+    SET p_profit = p_total_income - p_total_expense;
+END //
+DELIMITER ;
+
+-- Eksekusi Procedure 1
+CALL GetFinancialSummary(@income, @expense, @profit);
+SELECT @income AS total_income, @expense AS total_expense, @profit AS profit;
+
+-- PROCEDURE 2: Dengan 2 parameter (IN), dengan control flow IF + cursor
+-- Generate laporan transaksi per user dengan kategori
+DELIMITER //
+CREATE PROCEDURE GenerateUserReport(IN p_user_id INT, IN p_month VARCHAR(7))
+BEGIN
+    DECLARE done INT DEFAULT 0;
+    DECLARE v_id INT;
+    DECLARE v_name VARCHAR(200);
+    DECLARE v_amount DECIMAL(12,2);
+    DECLARE v_is_income TINYINT;
+    DECLARE v_date DATE;
+    DECLARE v_user_name VARCHAR(100);
+    DECLARE v_total_income DECIMAL(12,2) DEFAULT 0;
+    DECLARE v_total_expense DECIMAL(12,2) DEFAULT 0;
+
+    -- Cursor untuk ambil transaksi user di bulan tertentu
+    DECLARE cur CURSOR FOR
+        SELECT t.id, t.name, t.amount, t.is_income, t.transaction_date
+        FROM transactions t
+        WHERE t.user_id = p_user_id
+        AND DATE_FORMAT(t.transaction_date, '%Y-%m') = p_month
+        ORDER BY t.transaction_date;
+
+    DECLARE CONTINUE HANDLER FOR NOT FOUND SET done = 1;
+
+    -- Ambil nama user
+    SELECT name INTO v_user_name FROM users WHERE id = p_user_id;
+
+    -- Buat temporary table untuk kumpulin hasil cursor
+    -- (phpMyAdmin tidak support multiple result sets dari SELECT di loop)
+    DROP TEMPORARY TABLE IF EXISTS tmp_report;
+    CREATE TEMPORARY TABLE tmp_report (
+        id INT,
+        transaction_name VARCHAR(200),
+        amount DECIMAL(12,2),
+        type VARCHAR(10),
+        trans_date DATE
+    );
+
+    -- Buka cursor
+    OPEN cur;
+    read_loop: LOOP
+        FETCH cur INTO v_id, v_name, v_amount, v_is_income, v_date;
+        IF done THEN
+            LEAVE read_loop;
+        END IF;
+
+        -- Control flow IF untuk pisah income/expense
+        IF v_is_income = 1 THEN
+            SET v_total_income = v_total_income + v_amount;
+            INSERT INTO tmp_report VALUES (v_id, v_name, v_amount, 'INCOME', v_date);
+        ELSE
+            SET v_total_expense = v_total_expense + v_amount;
+            INSERT INTO tmp_report VALUES (v_id, v_name, v_amount, 'EXPENSE', v_date);
+        END IF;
+    END LOOP;
+    CLOSE cur;
+
+    -- Return single result set (phpMyAdmin-friendly)
+    SELECT
+        id,
+        transaction_name,
+        amount,
+        type,
+        trans_date,
+        v_user_name AS user_name,
+        p_month AS report_month,
+        v_total_income AS total_income,
+        v_total_expense AS total_expense,
+        (v_total_income - v_total_expense) AS net_profit
+    FROM tmp_report;
+
+    DROP TEMPORARY TABLE IF EXISTS tmp_report;
+END //
+DELIMITER ;
+
+----------------------------------------------------------------------
+>> 2b - Procedure 2: Eksekusi (CALL)
+----------------------------------------------------------------------
+CALL GenerateUserReport(1, '2026-07');
+
+
+----------------------------------------------------------------------
+>> 2b - Daftar Procedure
+----------------------------------------------------------------------
+SELECT ROUTINE_NAME AS procedure_name, ROUTINE_TYPE AS type
+FROM information_schema.ROUTINES
+WHERE ROUTINE_SCHEMA = 'uas' AND ROUTINE_TYPE = 'PROCEDURE';
+
+
+----------------------------------------------------------------------
+>> 2c - Trigger 1: trg_after_insert_transaction [CREATE]
+----------------------------------------------------------------------
+DELIMITER //
+CREATE TRIGGER trg_after_insert_transaction
+AFTER INSERT ON transactions
+FOR EACH ROW
+BEGIN
+    INSERT INTO activity_logs (table_name, record_id, action, new_values, changed_by)
+    VALUES (
+        'transactions',
+        NEW.id,
+        'INSERT',
+        CONCAT('name=', NEW.name, ', amount=', NEW.amount, ', is_income=', NEW.is_income, ', status=', NEW.status),
+        CURRENT_USER()
+    );
+END //
+DELIMITER ;
+
+
+----------------------------------------------------------------------
+>> 2c - Trigger 1: Test INSERT + cek log
+----------------------------------------------------------------------
+INSERT INTO transactions (user_id, product_id, name, category, amount, is_income, status, transaction_date, platform, variant_size, notes)
+VALUES (1, 1, 'Penjualan Kaos Test Trigger', 'Penjualan Produk', 89000, 1, 'Success', '2026-07-20', 'Shopee', 'M', 'Test trigger insert');
+
+SELECT * FROM activity_logs WHERE table_name = 'transactions' ORDER BY changed_at DESC LIMIT 5;
+
+
+----------------------------------------------------------------------
+>> 2c - Trigger 2: trg_before_update_product [CREATE]
+----------------------------------------------------------------------
+DELIMITER //
+CREATE TRIGGER trg_before_update_product
+BEFORE UPDATE ON products
+FOR EACH ROW
+BEGIN
+    IF NEW.price < 0 THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Harga tidak boleh negatif';
+    END IF;
+
+    IF OLD.price != NEW.price THEN
+        INSERT INTO activity_logs (table_name, record_id, action, old_values, new_values, changed_by)
+        VALUES (
+            'products',
+            NEW.id,
+            'UPDATE',
+            CONCAT('price=', OLD.price),
+            CONCAT('price=', NEW.price),
+            CURRENT_USER()
+        );
+    END IF;
+END //
+DELIMITER ;
+
+
+----------------------------------------------------------------------
+>> 2c - Trigger 2: Test UPDATE + cek log
+----------------------------------------------------------------------
+UPDATE products SET price = 95000 WHERE id = 1;
+
+SELECT * FROM activity_logs WHERE table_name = 'products' ORDER BY changed_at DESC LIMIT 5;
+
+
+----------------------------------------------------------------------
+>> 2c - Daftar Trigger
+----------------------------------------------------------------------
+SELECT
+    TRIGGER_NAME AS trigger_name,
+    EVENT_MANIPULATION AS event,
+    EVENT_OBJECT_TABLE AS table_name,
+    ACTION_TIMING AS timing
+FROM information_schema.TRIGGERS
+WHERE TRIGGER_SCHEMA = 'uas';
+
+
+----------------------------------------------------------------------
+>> 2d - Index 1: CREATE INDEX
+----------------------------------------------------------------------
+CREATE INDEX idx_transactions_user_date ON transactions (user_id, transaction_date);
+
+
+----------------------------------------------------------------------
+>> 2d - Index 2: CREATE INDEX (composite)
+----------------------------------------------------------------------
+CREATE INDEX idx_transactions_income_status_date ON transactions (is_income, status, transaction_date);
+
+
+----------------------------------------------------------------------
+>> 2d - Index 3: ALTER TABLE
+----------------------------------------------------------------------
+ALTER TABLE products ADD INDEX idx_products_category_price (category_id, price);
+
+
+----------------------------------------------------------------------
+>> 2d - EXPLAIN dengan index
+----------------------------------------------------------------------
+EXPLAIN
+SELECT * FROM transactions
+WHERE user_id = 1 AND transaction_date BETWEEN '2026-07-01' AND '2026-07-31';
+
+
+----------------------------------------------------------------------
+>> 2d - EXPLAIN tanpa index (IGNORE INDEX)
+----------------------------------------------------------------------
+EXPLAIN
+SELECT * FROM transactions IGNORE INDEX (idx_transactions_user_date, idx_transactions_income_status_date)
+WHERE user_id = 1 AND transaction_date BETWEEN '2026-07-01' AND '2026-07-31';
+
+
+----------------------------------------------------------------------
+>> 2d - EXPLAIN dengan index (category+price)
+----------------------------------------------------------------------
+EXPLAIN
+SELECT * FROM products
+WHERE category_id = 1 AND price > 100000;
+
+
+----------------------------------------------------------------------
+>> 2d - Daftar Index
+----------------------------------------------------------------------
+SELECT
+    TABLE_NAME AS table_name,
+    INDEX_NAME AS index_name,
+    GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX) AS columns,
+    INDEX_TYPE AS type,
+    NON_UNIQUE AS non_unique
+FROM information_schema.STATISTICS
+WHERE TABLE_SCHEMA = 'uas'
+GROUP BY TABLE_NAME, INDEX_NAME, INDEX_TYPE, NON_UNIQUE;
+
+
+----------------------------------------------------------------------
+>> 2e - View 1: v_success_transactions (Horizontal) [CREATE]
+----------------------------------------------------------------------
+CREATE VIEW v_success_transactions AS
+SELECT
+    t.id,
+    t.name AS transaction_name,
+    t.amount,
+    t.transaction_date,
+    t.platform,
+    u.name AS user_name,
+    p.title AS product_title
+FROM transactions t
+JOIN users u ON t.user_id = u.id
+LEFT JOIN products p ON t.product_id = p.id
+WHERE t.status = 'Success';
+
+
+----------------------------------------------------------------------
+>> 2e - View 1: Eksekusi
+----------------------------------------------------------------------
+SELECT * FROM v_success_transactions LIMIT 10;
+
+
+----------------------------------------------------------------------
+>> 2e - View 2: v_user_summary (Vertical) [CREATE]
+----------------------------------------------------------------------
+CREATE VIEW v_user_summary AS
+SELECT id, name, username, email, role, created_at
+FROM users;
+
+
+----------------------------------------------------------------------
+>> 2e - View 2: Eksekusi
+----------------------------------------------------------------------
+SELECT * FROM v_user_summary;
+
+
+----------------------------------------------------------------------
+>> 2e - View 3: v_admin_users (View-in-View + WITH CHECK OPTION) [CREATE]
+----------------------------------------------------------------------
+CREATE VIEW v_admin_users AS
+SELECT id, name, username, email, role, created_at
+FROM v_user_summary
+WHERE role = 'Admin'
+WITH CHECK OPTION;
+
+
+----------------------------------------------------------------------
+>> 2e - View 3: Eksekusi
+----------------------------------------------------------------------
+SELECT * FROM v_admin_users;
+
+
+----------------------------------------------------------------------
+>> 2e - View 1: Test UPDATE via view
+----------------------------------------------------------------------
+UPDATE v_success_transactions SET platform = 'Shopee' WHERE id = 1;
+
+
+----------------------------------------------------------------------
+>> 2e - View 2: Test INSERT via view
+----------------------------------------------------------------------
+INSERT INTO v_user_summary (name, username, email, role) VALUES ('Test User', 'test_user', 'test@waveneap.com', 'Staff Packing');
+
+
+----------------------------------------------------------------------
+>> 2e - View 3: Test INSERT yang memenuhi CHECK OPTION
+----------------------------------------------------------------------
+INSERT INTO v_admin_users (name, username, email, role) VALUES ('Admin Baru', 'admin_baru', 'adminbaru@waveneap.com', 'Admin');
+
+
+----------------------------------------------------------------------
+>> 2e - Daftar View
+----------------------------------------------------------------------
+SELECT
+    TABLE_NAME AS view_name,
+    CHECK_OPTION AS check_option,
+    IS_UPDATABLE AS is_updatable
+FROM information_schema.VIEWS
+WHERE TABLE_SCHEMA = 'uas';
+
+
+----------------------------------------------------------------------
+>> 2f - Buat 3 User
+----------------------------------------------------------------------
+CREATE USER IF NOT EXISTS 'admin_waveneap'@'localhost' IDENTIFIED BY 'admin123';
+CREATE USER IF NOT EXISTS 'kasir_waveneap'@'localhost' IDENTIFIED BY 'kasir123';
+CREATE USER IF NOT EXISTS 'staff_waveneap'@'localhost' IDENTIFIED BY 'staff123';
+
+
+----------------------------------------------------------------------
+>> 2f - Buat 3 Role
+----------------------------------------------------------------------
+CREATE ROLE IF NOT EXISTS role_admin, role_kasir, role_staff;
+
+
+----------------------------------------------------------------------
+>> 2f - Grant privilege ke role_admin (full access)
+----------------------------------------------------------------------
+GRANT SELECT, INSERT, UPDATE, DELETE ON uas.* TO role_admin;
+GRANT EXECUTE ON PROCEDURE uas.GetFinancialSummary TO role_admin;
+GRANT EXECUTE ON PROCEDURE uas.GenerateUserReport TO role_admin;
+
+
+----------------------------------------------------------------------
+>> 2f - Grant privilege ke role_kasir
+----------------------------------------------------------------------
+GRANT SELECT ON uas.products TO role_kasir;
+GRANT SELECT ON uas.categories TO role_kasir;
+GRANT SELECT ON uas.product_variants TO role_kasir;
+GRANT SELECT, INSERT ON uas.transactions TO role_kasir;
+GRANT SELECT ON uas.v_success_transactions TO role_kasir;
+GRANT SELECT ON uas.v_admin_users TO role_kasir;
+GRANT EXECUTE ON PROCEDURE uas.GetFinancialSummary TO role_kasir;
+
+
+----------------------------------------------------------------------
+>> 2f - Grant privilege ke role_staff (read-only)
+----------------------------------------------------------------------
+GRANT SELECT ON uas.products TO role_staff;
+GRANT SELECT ON uas.categories TO role_staff;
+GRANT SELECT ON uas.product_variants TO role_staff;
+GRANT SELECT ON uas.v_user_summary TO role_staff;
+
+
+----------------------------------------------------------------------
+>> 2f - Assign role ke user + SET DEFAULT ROLE
+----------------------------------------------------------------------
+GRANT role_admin TO 'admin_waveneap'@'localhost';
+GRANT role_kasir TO 'kasir_waveneap'@'localhost';
+GRANT role_staff TO 'staff_waveneap'@'localhost';
+
+SET DEFAULT ROLE role_admin FOR 'admin_waveneap'@'localhost';
+SET DEFAULT ROLE role_kasir FOR 'kasir_waveneap'@'localhost';
+SET DEFAULT ROLE role_staff FOR 'staff_waveneap'@'localhost';
+
+
+----------------------------------------------------------------------
+>> 2f - Daftar User
+----------------------------------------------------------------------
+SELECT User AS user_name, Host AS host
+FROM mysql.user WHERE User LIKE '%waveneap%';
+
+
+----------------------------------------------------------------------
+>> 2f - Daftar Role Assignment
+----------------------------------------------------------------------
+SELECT CONCAT(User, '@', Host) AS assigned_to, Role AS role_name
+FROM mysql.roles_mapping WHERE User LIKE '%waveneap%';
+
+
+----------------------------------------------------------------------
+>> 2f - Grants per User
+----------------------------------------------------------------------
+SHOW GRANTS FOR 'admin_waveneap'@'localhost';
+SHOW GRANTS FOR 'kasir_waveneap'@'localhost';
+SHOW GRANTS FOR 'staff_waveneap'@'localhost';
